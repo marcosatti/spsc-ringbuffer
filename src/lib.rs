@@ -12,7 +12,7 @@ pub enum StoreErrorKind {
 }
 
 pub struct SpscRingbuffer<T: Copy + Default> {
-    buffer: ArrayVec<[T; 72]>,
+    buffer: ArrayVec<[T; 2048]>,
     head: AtomicUsize,
     tail: AtomicUsize,
     size: usize,
@@ -20,12 +20,12 @@ pub struct SpscRingbuffer<T: Copy + Default> {
 
 impl<T: Copy + Default> SpscRingbuffer<T> {
     pub fn new(size: usize) -> SpscRingbuffer<T> {
-        if size >= 72 { 
-            unimplemented!("SPSC Ringbuffer sizes above 71 are not supported for now - awaiting const generics support");
+        if size >= 2048 { 
+            unimplemented!("SPSC Ringbuffer sizes above 2047 are not supported for now - awaiting const generics support");
         }
 
         SpscRingbuffer {
-            buffer: ArrayVec::from([T::default(); 72]),
+            buffer: ArrayVec::from([T::default(); 2048]),
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
             size: size + 1,
