@@ -40,7 +40,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         ((head + 1) % self.size) == tail
     }
 
-    pub fn len(&self) -> usize {
+    pub fn read_available(&self) -> usize {
         let head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
 
@@ -48,6 +48,17 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
             head - tail
         } else {
             (self.size - tail) + head
+        }
+    }
+
+    pub fn write_available(&self) -> usize {
+        let head = self.head.load(Ordering::Relaxed);
+        let tail = self.tail.load(Ordering::Relaxed);
+
+        if head < tail {
+            tail - head - 1
+        } else {
+            (self.size - head - 1) + tail
         }
     }
 
@@ -176,7 +187,7 @@ mod tests_api {
     }
 
     #[test]
-    fn len() {
+    fn read_available() {
         let buffer = SpscRingbuffer::<u32>::new(8);
 
         buffer.push(1).unwrap();
@@ -185,7 +196,7 @@ mod tests_api {
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
 
-        assert_eq!(buffer.len(), 5);
+        assert_eq!(buffer.read_available(), 5);
 
         buffer.pop().unwrap();
         buffer.pop().unwrap();
@@ -199,17 +210,55 @@ mod tests_api {
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         
-        assert_eq!(buffer.len(), 5);
+        assert_eq!(buffer.read_available(), 5);
         
         buffer.pop().unwrap();
         buffer.pop().unwrap();
         buffer.pop().unwrap();
         
-        assert_eq!(buffer.len(), 2);
+        assert_eq!(buffer.read_available(), 2);
 
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         
-        assert_eq!(buffer.len(), 4);
+        assert_eq!(buffer.read_available(), 4);
+    }
+
+    #[test]
+    fn write_available() {
+        let buffer = SpscRingbuffer::<u32>::new(8);
+
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+
+        assert_eq!(buffer.write_available(), 3);
+
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        
+        assert_eq!(buffer.write_available(), 3);
+        
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        
+        assert_eq!(buffer.write_available(), 6);
+
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        
+        assert_eq!(buffer.write_available(), 4);
     }
 }
