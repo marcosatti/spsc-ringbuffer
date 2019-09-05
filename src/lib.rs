@@ -106,6 +106,11 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
 
         Ok(())
     }
+
+    pub fn clear(&self) {
+        let head = self.head.load(Ordering::Relaxed);
+        self.tail.store(head, Ordering::Relaxed);
+    }
 }
 
 unsafe impl<T: Copy + Default> Sync for SpscRingbuffer<T> {}
@@ -260,5 +265,22 @@ mod tests_api {
         buffer.push(1).unwrap();
         
         assert_eq!(buffer.write_available(), 4);
+    }
+
+    #[test]
+    fn clear() {
+        let buffer = SpscRingbuffer::<u32>::new(8);
+
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        
+        assert_eq!(buffer.read_available(), 5);
+
+        buffer.clear();
+
+        assert!(buffer.is_empty());
     }
 }
