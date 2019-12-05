@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::UnsafeCell;
 use arrayvec::ArrayVec;
 
 #[derive(Debug, PartialEq)]
@@ -12,7 +13,7 @@ pub enum StoreErrorKind {
 }
 
 pub struct SpscRingbuffer<T: Copy + Default> {
-    buffer: ArrayVec<[T; 128]>,
+    buffer: UnsafeCell<ArrayVec<[T; 128]>>,
     head: AtomicUsize,
     tail: AtomicUsize,
     size: usize,
@@ -25,7 +26,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         }
 
         SpscRingbuffer {
-            buffer: ArrayVec::from([T::default(); 128]),
+            buffer: UnsafeCell::new(ArrayVec::from([T::default(); 128])),
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
             size: size + 1,
@@ -80,7 +81,9 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
             return Err(LoadErrorKind::Empty);
         }
 
-        let item = self.buffer[tail];
+        let item = unsafe {
+            self.buffer.get().as_ref().unwrap()[tail]
+        };
 
         let next_tail = (tail + 1) % self.size;
         self.tail.store(next_tail, Ordering::Release);
@@ -97,8 +100,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         }
 
         unsafe { 
-            let slot = &self.buffer[head] as *const T as *mut T;
-            *slot = item; 
+            self.buffer.get().as_mut().unwrap()[head] = item;
         }
 
         let next_head = (head + 1) % self.size;
