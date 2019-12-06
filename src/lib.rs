@@ -144,16 +144,19 @@ mod tests_api {
     fn is_empty() {
         let buffer = SpscRingbuffer::<u32>::new(32);
         assert!(buffer.is_empty());
-        buffer.push(1).unwrap();
-        assert!(!buffer.is_empty());
+
+        for i in 0..32 {
+            buffer.push(i).unwrap();
+            assert!(!buffer.is_empty());
+        }
     }
 
     #[test]
     fn is_full() {
         let buffer = SpscRingbuffer::<u32>::new(32);
-        assert!(!buffer.is_full());
 
         for i in 0..32 {
+            assert!(!buffer.is_full());
             buffer.push(i).unwrap();
         }
 
