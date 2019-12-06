@@ -45,7 +45,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         let head = self.head.load(Ordering::Relaxed);
         let tail = self.tail.load(Ordering::Relaxed);
 
-        if head > tail {
+        if head >= tail {
             head - tail
         } else {
             (self.size - tail) + head
@@ -197,6 +197,8 @@ mod tests_api {
     fn read_available() {
         let buffer = SpscRingbuffer::<u32>::new(8);
 
+        assert_eq!(buffer.read_available(), 0);
+
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
@@ -229,11 +231,20 @@ mod tests_api {
         buffer.push(1).unwrap();
         
         assert_eq!(buffer.read_available(), 4);
+
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+
+        assert_eq!(buffer.read_available(), 0);
     }
 
     #[test]
     fn write_available() {
         let buffer = SpscRingbuffer::<u32>::new(8);
+
+        assert_eq!(buffer.write_available(), 8);
 
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
@@ -265,8 +276,23 @@ mod tests_api {
 
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
+        buffer.push(1).unwrap();
         
-        assert_eq!(buffer.write_available(), 4);
+        assert_eq!(buffer.write_available(), 0);
+
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+        buffer.pop().unwrap();
+
+        assert_eq!(buffer.write_available(), 8);
     }
 
     #[test]
