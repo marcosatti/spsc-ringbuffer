@@ -12,22 +12,24 @@ use std::{
     },
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum LoadErrorKind {
     Empty,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum StoreErrorKind {
     Full,
 }
 
 #[atomic_enum]
+#[derive(PartialEq)]
 enum LimitKind {
     Empty,
     Full,
 }
 
+#[derive(Debug)]
 pub struct SpscRingbuffer<T: Copy + Default> {
     buffer: UnsafeCell<Vec<T>>,
     write_index: AtomicUsize,
