@@ -102,7 +102,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         let read_index = self.read_index.load(Ordering::Relaxed);
         let write_index = self.write_index.load(Ordering::Relaxed);
 
-        let item = unsafe { self.buffer.get().as_ref().unwrap()[read_index] };
+        let item = unsafe { *self.buffer.get().as_ref().unwrap().get_unchecked(read_index) };
 
         let next_read_index = (read_index + 1) % self.size;
 
@@ -124,7 +124,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         let read_index = self.read_index.load(Ordering::Relaxed);
 
         unsafe {
-            self.buffer.get().as_mut().unwrap()[write_index] = item;
+            *self.buffer.get().as_mut().unwrap().get_unchecked_mut(write_index) = item;
         }
 
         let next_write_index = (write_index + 1) % self.size;
