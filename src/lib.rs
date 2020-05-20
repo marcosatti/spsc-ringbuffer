@@ -63,8 +63,8 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
     }
 
     pub fn read_available(&self) -> usize {
-        let write_index = self.write_index.load(Ordering::Relaxed);
-        let read_index = self.read_index.load(Ordering::Relaxed);
+        let write_index = self.write_index.load(Ordering::Acquire);
+        let read_index = self.read_index.load(Ordering::Acquire);
 
         if write_index == read_index {
             match self.limit_kind.load(Ordering::Relaxed) {
@@ -79,8 +79,8 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
     }
 
     pub fn write_available(&self) -> usize {
-        let write_index = self.write_index.load(Ordering::Relaxed);
-        let read_index = self.read_index.load(Ordering::Relaxed);
+        let write_index = self.write_index.load(Ordering::Acquire);
+        let read_index = self.read_index.load(Ordering::Acquire);
 
         if write_index == read_index {
             match self.limit_kind.load(Ordering::Relaxed) {
@@ -110,7 +110,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
             self.limit_kind.store(LimitKind::Empty, Ordering::Relaxed)
         }
 
-        self.read_index.store(next_read_index, Ordering::Relaxed);
+        self.read_index.store(next_read_index, Ordering::Release);
 
         Ok(item)
     }
@@ -133,7 +133,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
             self.limit_kind.store(LimitKind::Full, Ordering::Relaxed)
         }
 
-        self.write_index.store(next_write_index, Ordering::Relaxed);
+        self.write_index.store(next_write_index, Ordering::Release);
 
         Ok(())
     }
