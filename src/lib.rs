@@ -2,10 +2,15 @@
 
 //! SPSC Ringbuffer.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::cell::UnsafeCell;
-use std::intrinsics::unlikely;
 use atomic_enum::atomic_enum;
+use std::{
+    cell::UnsafeCell,
+    intrinsics::unlikely,
+    sync::atomic::{
+        AtomicUsize,
+        Ordering,
+    },
+};
 
 #[derive(Debug, PartialEq)]
 pub enum LoadErrorKind {
@@ -38,7 +43,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
             write_index: AtomicUsize::new(0),
             read_index: AtomicUsize::new(0),
             limit_kind: AtomicLimitKind::new(LimitKind::Empty),
-            size: size,
+            size,
         }
     }
 
@@ -96,9 +101,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         let read_index = self.read_index.load(Ordering::Relaxed);
         let write_index = self.write_index.load(Ordering::Relaxed);
 
-        let item = unsafe {
-            self.buffer.get().as_ref().unwrap()[read_index]
-        };
+        let item = unsafe { self.buffer.get().as_ref().unwrap()[read_index] };
 
         let next_read_index = (read_index + 1) % self.size;
 
@@ -119,7 +122,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         let write_index = self.write_index.load(Ordering::Relaxed);
         let read_index = self.read_index.load(Ordering::Relaxed);
 
-        unsafe { 
+        unsafe {
             self.buffer.get().as_mut().unwrap()[write_index] = item;
         }
 
@@ -238,24 +241,24 @@ mod tests_api {
         buffer.pop().unwrap();
         buffer.pop().unwrap();
         buffer.pop().unwrap();
-        
+
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
-        
+
         assert_eq!(buffer.read_available(), 5);
-        
+
         buffer.pop().unwrap();
         buffer.pop().unwrap();
         buffer.pop().unwrap();
-        
+
         assert_eq!(buffer.read_available(), 2);
 
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
-        
+
         assert_eq!(buffer.read_available(), 4);
 
         buffer.pop().unwrap();
@@ -285,19 +288,19 @@ mod tests_api {
         buffer.pop().unwrap();
         buffer.pop().unwrap();
         buffer.pop().unwrap();
-        
+
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
-        
+
         assert_eq!(buffer.write_available(), 3);
-        
+
         buffer.pop().unwrap();
         buffer.pop().unwrap();
         buffer.pop().unwrap();
-        
+
         assert_eq!(buffer.write_available(), 6);
 
         buffer.push(1).unwrap();
@@ -306,7 +309,7 @@ mod tests_api {
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
-        
+
         assert_eq!(buffer.write_available(), 0);
 
         buffer.pop().unwrap();
@@ -330,7 +333,7 @@ mod tests_api {
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
         buffer.push(1).unwrap();
-        
+
         assert_eq!(buffer.read_available(), 5);
 
         buffer.clear();
