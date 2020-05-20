@@ -5,4 +5,4 @@ authors = ["Marco Satti <marcosatti@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-arrayvec = "0.4"
+atomic_enum = "*"

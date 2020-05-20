@@ -1,6 +1,11 @@
+#![feature(core_intrinsics)]
+
+//! SPSC Ringbuffer.
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::cell::UnsafeCell;
-use arrayvec::ArrayVec;
+use std::intrinsics::unlikely;
+use atomic_enum::atomic_enum;
 
 #[derive(Debug, PartialEq)]
 pub enum LoadErrorKind {
@@ -12,112 +17,130 @@ pub enum StoreErrorKind {
     Full,
 }
 
+#[atomic_enum]
+enum LimitKind {
+    Empty,
+    Full,
+}
+
 pub struct SpscRingbuffer<T: Copy + Default> {
-    buffer: UnsafeCell<ArrayVec<[T; 128]>>,
-    head: AtomicUsize,
-    tail: AtomicUsize,
+    buffer: UnsafeCell<Vec<T>>,
+    write_index: AtomicUsize,
+    read_index: AtomicUsize,
+    limit_kind: AtomicLimitKind,
     size: usize,
 }
 
 impl<T: Copy + Default> SpscRingbuffer<T> {
     pub fn new(size: usize) -> SpscRingbuffer<T> {
-        if size >= 128 { 
-            unimplemented!("SPSC Ringbuffer sizes above 127 are not supported for now - awaiting const generics support");
-        }
-
         SpscRingbuffer {
-            buffer: UnsafeCell::new(ArrayVec::from([T::default(); 128])),
-            head: AtomicUsize::new(0),
-            tail: AtomicUsize::new(0),
-            size: size + 1,
-        }
-    }
-
-    fn is_empty_by_ptr(&self, head: usize, tail: usize) -> bool {
-        head == tail
-    }
-    
-    fn is_full_by_ptr(&self, head: usize, tail: usize) -> bool {
-        ((head + 1) % self.size) == tail
-    }
-
-    pub fn read_available(&self) -> usize {
-        let head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Relaxed);
-
-        if head >= tail {
-            head - tail
-        } else {
-            (self.size - tail) + head
-        }
-    }
-
-    pub fn write_available(&self) -> usize {
-        let head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Relaxed);
-
-        if head < tail {
-            tail - head - 1
-        } else {
-            (self.size - head - 1) + tail
+            buffer: UnsafeCell::new(vec![T::default(); size]),
+            write_index: AtomicUsize::new(0),
+            read_index: AtomicUsize::new(0),
+            limit_kind: AtomicLimitKind::new(LimitKind::Empty),
+            size: size,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        // Empty condition is when both pointers are equal.
-        self.is_empty_by_ptr(self.head.load(Ordering::Relaxed), self.tail.load(Ordering::Relaxed))
+        self.read_available() == 0
     }
 
     pub fn is_full(&self) -> bool {
-        // Full condition is when head is one less than the tail.
-        self.is_full_by_ptr(self.head.load(Ordering::Relaxed), self.tail.load(Ordering::Relaxed))
+        self.write_available() == 0
+    }
+
+    pub fn clear(&self) {
+        self.write_index.store(0, Ordering::Relaxed);
+        self.read_index.store(0, Ordering::Relaxed);
+        self.limit_kind.store(LimitKind::Empty, Ordering::Relaxed);
+    }
+
+    pub fn read_available(&self) -> usize {
+        let write_index = self.write_index.load(Ordering::Relaxed);
+        let read_index = self.read_index.load(Ordering::Relaxed);
+
+        if write_index == read_index {
+            match self.limit_kind.load(Ordering::Relaxed) {
+                LimitKind::Empty => 0,
+                LimitKind::Full => self.size,
+            }
+        } else if write_index > read_index {
+            write_index - read_index
+        } else {
+            (self.size - read_index) + write_index
+        }
+    }
+
+    pub fn write_available(&self) -> usize {
+        let write_index = self.write_index.load(Ordering::Relaxed);
+        let read_index = self.read_index.load(Ordering::Relaxed);
+
+        if write_index == read_index {
+            match self.limit_kind.load(Ordering::Relaxed) {
+                LimitKind::Empty => self.size,
+                LimitKind::Full => 0,
+            }
+        } else if write_index < read_index {
+            read_index - write_index
+        } else {
+            (self.size - write_index) + read_index
+        }
     }
 
     pub fn pop(&self) -> Result<T, LoadErrorKind> {
-        let head = self.head.load(Ordering::Relaxed);
-        let tail = self.tail.load(Ordering::Acquire);
-
-        if self.is_empty_by_ptr(head, tail) {
+        if unlikely(self.is_empty()) {
             return Err(LoadErrorKind::Empty);
         }
 
+        let read_index = self.read_index.load(Ordering::Relaxed);
+        let write_index = self.write_index.load(Ordering::Relaxed);
+
         let item = unsafe {
-            self.buffer.get().as_ref().unwrap()[tail]
+            self.buffer.get().as_ref().unwrap()[read_index]
         };
 
-        let next_tail = (tail + 1) % self.size;
-        self.tail.store(next_tail, Ordering::Release);
+        let next_read_index = (read_index + 1) % self.size;
+
+        if next_read_index == write_index {
+            self.limit_kind.store(LimitKind::Empty, Ordering::Relaxed)
+        }
+
+        self.read_index.store(next_read_index, Ordering::Relaxed);
 
         Ok(item)
     }
 
     pub fn push(&self, item: T) -> Result<(), StoreErrorKind> {
-        let tail = self.tail.load(Ordering::Relaxed);
-        let head = self.head.load(Ordering::Acquire);
-
-        if self.is_full_by_ptr(head, tail) {
+        if unlikely(self.is_full()) {
             return Err(StoreErrorKind::Full);
         }
 
+        let write_index = self.write_index.load(Ordering::Relaxed);
+        let read_index = self.read_index.load(Ordering::Relaxed);
+
         unsafe { 
-            self.buffer.get().as_mut().unwrap()[head] = item;
+            self.buffer.get().as_mut().unwrap()[write_index] = item;
         }
 
-        let next_head = (head + 1) % self.size;
-        self.head.store(next_head, Ordering::Release);
+        let next_write_index = (write_index + 1) % self.size;
+
+        if next_write_index == read_index {
+            self.limit_kind.store(LimitKind::Full, Ordering::Relaxed)
+        }
+
+        self.write_index.store(next_write_index, Ordering::Relaxed);
 
         Ok(())
     }
-
-    pub fn clear(&self) {
-        let head = self.head.load(Ordering::Relaxed);
-        self.tail.store(head, Ordering::Relaxed);
-    }
 }
 
-unsafe impl<T: Copy + Default> Sync for SpscRingbuffer<T> {}
+unsafe impl<T: Copy + Default> Sync for SpscRingbuffer<T> {
+}
 
-/// API tests
+unsafe impl<T: Copy + Default> Send for SpscRingbuffer<T> {
+}
+
 #[cfg(test)]
 mod tests_api {
     use super::*;
