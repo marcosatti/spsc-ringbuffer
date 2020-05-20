@@ -5,7 +5,6 @@
 use atomic_enum::atomic_enum;
 use std::{
     cell::UnsafeCell,
-    intrinsics::unlikely,
     sync::atomic::{
         AtomicUsize,
         Ordering,
@@ -96,7 +95,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
     }
 
     pub fn pop(&self) -> Result<T, LoadErrorKind> {
-        if unlikely(self.is_empty()) {
+        if self.is_empty() {
             return Err(LoadErrorKind::Empty);
         }
 
@@ -117,7 +116,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
     }
 
     pub fn push(&self, item: T) -> Result<(), StoreErrorKind> {
-        if unlikely(self.is_full()) {
+        if self.is_full() {
             return Err(StoreErrorKind::Full);
         }
 
