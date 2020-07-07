@@ -1,8 +1,11 @@
-#![feature(core_intrinsics)]
-
 //! SPSC Ringbuffer.
 
 use atomic_enum::atomic_enum;
+#[cfg(feature = "serialization")]
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use std::{
     cell::UnsafeCell,
     sync::atomic::{
@@ -10,6 +13,9 @@ use std::{
         Ordering,
     },
 };
+
+#[derive(Debug)]
+struct UnsafeVec<T>(UnsafeCell<Vec<T>>);
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum LoadErrorKind {
@@ -23,14 +29,16 @@ pub enum StoreErrorKind {
 
 #[atomic_enum]
 #[derive(PartialEq)]
+#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
 enum LimitKind {
     Empty,
     Full,
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serialization", derive(Serialize, Deserialize))]
 pub struct SpscRingbuffer<T: Copy + Default> {
-    buffer: UnsafeCell<Vec<T>>,
+    buffer: UnsafeVec<T>,
     write_index: AtomicUsize,
     read_index: AtomicUsize,
     limit_kind: AtomicLimitKind,
@@ -40,7 +48,7 @@ pub struct SpscRingbuffer<T: Copy + Default> {
 impl<T: Copy + Default> SpscRingbuffer<T> {
     pub fn new(size: usize) -> SpscRingbuffer<T> {
         SpscRingbuffer {
-            buffer: UnsafeCell::new(vec![T::default(); size]),
+            buffer: UnsafeVec(UnsafeCell::new(vec![T::default(); size])),
             write_index: AtomicUsize::new(0),
             read_index: AtomicUsize::new(0),
             limit_kind: AtomicLimitKind::new(LimitKind::Empty),
@@ -102,7 +110,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         let read_index = self.read_index.load(Ordering::Relaxed);
         let write_index = self.write_index.load(Ordering::Relaxed);
 
-        let item = unsafe { *self.buffer.get().as_ref().unwrap().get_unchecked(read_index) };
+        let item = unsafe { *self.buffer.0.get().as_ref().unwrap().get_unchecked(read_index) };
 
         let next_read_index = (read_index + 1) % self.size;
 
@@ -124,7 +132,7 @@ impl<T: Copy + Default> SpscRingbuffer<T> {
         let read_index = self.read_index.load(Ordering::Relaxed);
 
         unsafe {
-            *self.buffer.get().as_mut().unwrap().get_unchecked_mut(write_index) = item;
+            *self.buffer.0.get().as_mut().unwrap().get_unchecked_mut(write_index) = item;
         }
 
         let next_write_index = (write_index + 1) % self.size;
@@ -340,5 +348,50 @@ mod tests_api {
         buffer.clear();
 
         assert!(buffer.is_empty());
+    }
+}
+
+#[cfg(feature = "serialization")]
+pub mod serialization {
+    use super::*;
+    use serde::{
+        Deserializer,
+        Serializer,
+    };
+
+    impl<T> Serialize for UnsafeVec<T>
+    where T: Default + Copy + Serialize
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer {
+            let buffer = unsafe { &*self.0.get() };
+            <Vec<T> as Serialize>::serialize(buffer, serializer)
+        }
+    }
+
+    impl<'de, T> Deserialize<'de> for UnsafeVec<T>
+    where T: Default + Copy + Deserialize<'de>
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de> {
+            let buffer = <Vec<T> as Deserialize>::deserialize(deserializer)?;
+            Ok(UnsafeVec(UnsafeCell::new(buffer)))
+        }
+    }
+
+    impl Serialize for AtomicLimitKind {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer {
+            let kind = self.load(Ordering::Relaxed);
+            <LimitKind as Serialize>::serialize(&kind, serializer)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for AtomicLimitKind {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: Deserializer<'de> {
+            let kind = <LimitKind as Deserialize>::deserialize(deserializer)?;
+            Ok(AtomicLimitKind::new(kind))
+        }
     }
 }
