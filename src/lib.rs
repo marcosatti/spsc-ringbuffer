@@ -153,9 +153,8 @@ unsafe impl<T: Copy + Default> Sync for SpscRingbuffer<T> {
 unsafe impl<T: Copy + Default> Send for SpscRingbuffer<T> {
 }
 
-impl<T> Clone for SpscRingbuffer<T> 
-where
-    T: Clone + Copy + Default,
+impl<T> Clone for SpscRingbuffer<T>
+where T: Clone + Copy + Default
 {
     fn clone(&self) -> Self {
         unsafe {
