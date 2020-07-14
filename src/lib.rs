@@ -153,6 +153,23 @@ unsafe impl<T: Copy + Default> Sync for SpscRingbuffer<T> {
 unsafe impl<T: Copy + Default> Send for SpscRingbuffer<T> {
 }
 
+impl<T> Clone for SpscRingbuffer<T> 
+where
+    T: Clone + Copy + Default,
+{
+    fn clone(&self) -> Self {
+        unsafe {
+            SpscRingbuffer {
+                buffer: UnsafeVec(UnsafeCell::new((*self.buffer.0.get()).clone())),
+                write_index: AtomicUsize::new(self.write_index.load(Ordering::Relaxed)),
+                read_index: AtomicUsize::new(self.read_index.load(Ordering::Relaxed)),
+                limit_kind: AtomicLimitKind::new(self.limit_kind.load(Ordering::Relaxed)),
+                size: self.size,
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests_api {
     use super::*;
